@@ -1,6 +1,6 @@
 const { UserInputError, AuthenticationError } = require("apollo-server");
 const bcrypt = require("bcryptjs");
-const { User } = require("../../models");
+const { User, Message } = require("../../models");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../../config/env.json");
 const { Op } = require("sequelize");
@@ -14,9 +14,24 @@ module.exports = {
         if (!user) {
           throw new AuthenticationError("Unauthenticated");
         }
-        const users = await User.findAll({
+        let users = await User.findAll({
+          attributes: ["username", "createdAt", "imageUrl"],
           where: { username: { [Op.ne]: user.username } },
         });
+        //retrieve all messages
+        const allUserMessages = await Message.findAll({
+          where: { [Op.or]: [{ from: user.username }, { to: user.username }] },
+          order: [["createdAt", "DESC"]],
+        });
+        //add the last sent message to each user conversation
+        users = users.map((otherUser) => {
+          const latestMessage = allUserMessages.find(
+            (m) => m.from === otherUser.username || m.to === otherUser.username
+          );
+          otherUser.latestMessage = latestMessage;
+          return otherUser;
+        });
+
         return users;
       } catch (err) {
         console.log(err);
@@ -63,7 +78,7 @@ module.exports = {
 
         return {
           ...user.toJSON(),
-          createdAt: user.createdAt.toISOString(),
+          // createdAt: user.createdAt.toISOString(),
           token,
         };
       } catch (err) {
